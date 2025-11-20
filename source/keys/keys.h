@@ -25,13 +25,11 @@
 
 #define TPRINTF(text) \
     end_time = get_tmr_us(); \
-    gfx_printf(text" done in %d us\n", end_time - start_time); \
     start_time = get_tmr_us(); \
     minerva_periodic_training()
 
 #define TPRINTFARGS(text, args...) \
     end_time = get_tmr_us(); \
-    gfx_printf(text" done in %d us\n", args, end_time - start_time); \
     start_time = get_tmr_us(); \
     minerva_periodic_training()
 
@@ -45,6 +43,7 @@
 #define SAVE_KEY_FAMILY_VAR(name, varname, start) _save_key_family(#name, varname, start, ARRAY_SIZE(varname), sizeof(*(varname)), text_buffer)
 
 void dump_keys();
+void dump_keys_silent();
 int save_mariko_partial_keys(u32 start, u32 count, bool append);
 void derive_amiibo_keys();
 bool derive_bis_keys_silently();

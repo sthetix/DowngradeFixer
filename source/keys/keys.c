@@ -112,7 +112,6 @@ static void _derive_master_keys_from_latest_key(key_storage_t *keys, bool is_dev
     load_aes_key(KS_AES_ECB, keys->temp_key, keys->master_key[0], is_dev ? master_key_vectors_dev[0] : master_key_vectors[0]);
 
     if (key_exists(keys->temp_key)) {
-        EPRINTFARGS("Unable to derive master keys for %s.", is_dev ? "dev" : "prod");
         memset(keys->master_key, 0, sizeof(keys->master_key));
     }
 }
@@ -260,13 +259,9 @@ static bool _get_titlekeys_from_save(u32 buf_size, const u8 *save_mac_key, title
 
     if (is_personalized) {
         titlekey_save_path[25] = '2';
-        gfx_printf("\n%kPersonalized... ", colors[color_idx % 6]);
-    } else {
-        gfx_printf("\n%kCommon...       ", colors[color_idx % 6]);
     }
 
     if (f_open(&fp, titlekey_save_path, FA_READ | FA_OPEN_EXISTING)) {
-        EPRINTF("Unable to open e1 save. Skipping.");
         return false;
     }
 
@@ -274,10 +269,8 @@ static bool _get_titlekeys_from_save(u32 buf_size, const u8 *save_mac_key, title
     save_init(save_ctx, &fp, save_mac_key, 0);
 
     bool save_process_success = save_process(save_ctx);
-    TPRINTF("\n  Save process...");
 
     if (!save_process_success) {
-        EPRINTF("Failed to process es save.");
         f_close(&fp);
         save_free_contexts(save_ctx);
         free(save_ctx);
@@ -285,7 +278,6 @@ static bool _get_titlekeys_from_save(u32 buf_size, const u8 *save_mac_key, title
     }
 
     if (!save_open_file(save_ctx, &ticket_file, ticket_list_bin_path, OPEN_MODE_READ)) {
-        EPRINTF("Unable to locate ticket_list.bin in save.");
         f_close(&fp);
         save_free_contexts(save_ctx);
         free(save_ctx);
@@ -304,10 +296,8 @@ static bool _get_titlekeys_from_save(u32 buf_size, const u8 *save_mac_key, title
         }
         offset += br;
     }
-    TPRINTF("  Count titlekeys...");
 
     if (!save_open_file(save_ctx, &ticket_file, ticket_bin_path, OPEN_MODE_READ)) {
-        EPRINTF("Unable to locate ticket.bin in save.");
         f_close(&fp);
         save_free_contexts(save_ctx);
         free(save_ctx);
@@ -326,20 +316,9 @@ static bool _get_titlekeys_from_save(u32 buf_size, const u8 *save_mac_key, title
         es_decode_tickets(buf_size, titlekey_buffer, remaining, file_tkey_count, &_titlekey_count, save_x, save_y, &pct, &last_pct, is_personalized);
         remaining -= MIN(buf_size / sizeof(ticket_t), remaining);
     }
-    tui_pbar(save_x, save_y, 100, COLOR_GREEN, 0xFF155500);
     f_close(&fp);
     save_free_contexts(save_ctx);
     free(save_ctx);
-
-    gfx_con_setpos(0, save_y);
-
-    if (is_personalized) {
-        TPRINTFARGS("\n%kPersonalized... ", colors[(color_idx++) % 6]);
-    } else {
-        TPRINTFARGS("\n%kCommon...       ", colors[(color_idx++) % 6]);
-    }
-
-    gfx_printf("\n\n\n");
 
     return true;
 }
@@ -359,12 +338,10 @@ static bool _derive_sd_seed(key_storage_t *keys) {
     FRESULT fr = f_open(&fp, private_path, FA_READ | FA_OPEN_EXISTING);
     free(private_path);
     if (fr) {
-        EPRINTF("Unable to open SD seed vector. Skipping.");
         return false;
     }
     // Get sd seed verification vector
     if (f_read(&fp, keys->temp_key, SE_KEY_128_SIZE, &read_bytes) || read_bytes != SE_KEY_128_SIZE) {
-        EPRINTF("Unable to read SD seed vector. Skipping.");
         f_close(&fp);
         return false;
     }
@@ -372,7 +349,6 @@ static bool _derive_sd_seed(key_storage_t *keys) {
 
     // This file is small enough that parsing the savedata properly is slower
     if (f_open(&fp, "bis:/save/8000000000000043", FA_READ | FA_OPEN_EXISTING)) {
-        EPRINTF("Unable to open ns_appman save.\nSkipping SD seed.");
         return false;
     }
 
@@ -389,8 +365,6 @@ static bool _derive_sd_seed(key_storage_t *keys) {
     }
     f_close(&fp);
 
-    TPRINTFARGS("%kSD Seed...      ", colors[(color_idx++) % 6]);
-
     return true;
 }
 
@@ -399,13 +373,9 @@ static bool _derive_titlekeys(key_storage_t *keys, titlekey_buffer_t *titlekey_b
         return false;
     }
 
-    gfx_printf("%kTitlekeys...     \n", colors[(color_idx++) % 6]);
-
     const u32 buf_size = SAVE_BLOCK_SIZE_DEFAULT;
     _get_titlekeys_from_save(buf_size, keys->save_mac_key, titlekey_buffer, NULL);
     _get_titlekeys_from_save(buf_size, keys->save_mac_key, titlekey_buffer, &keys->eticket_rsa_keypair);
-
-    gfx_printf("\n%k  Found %d titlekeys.\n\n", colors[(color_idx++) % 6], _titlekey_count);
 
     return true;
 }
@@ -423,17 +393,12 @@ static void _derive_emmc_keys(key_storage_t *keys, titlekey_buffer_t *titlekey_b
     se_aes_key_set(KS_BIS_02_TWEAK, keys->bis_key[2] + 0x10, SE_KEY_128_SIZE);
 
     if (!emummc_storage_set_mmc_partition(EMMC_GPP)) {
-        EPRINTF("Unable to set partition.");
         return;
     }
 
-    if (!decrypt_ssl_rsa_key(keys, titlekey_buffer)) {
-        EPRINTF("Unable to derive SSL key.");
-    }
+    decrypt_ssl_rsa_key(keys, titlekey_buffer);
 
-    if (!decrypt_eticket_rsa_key(keys, titlekey_buffer, is_dev)) {
-        EPRINTF("Unable to derive ETicket key.");
-    }
+    decrypt_eticket_rsa_key(keys, titlekey_buffer, is_dev);
 
     // Parse eMMC GPT
     LIST_INIT(gpt);
@@ -441,7 +406,6 @@ static void _derive_emmc_keys(key_storage_t *keys, titlekey_buffer_t *titlekey_b
 
     emmc_part_t *system_part = nx_emmc_part_find(&gpt, "SYSTEM");
     if (!system_part) {
-        EPRINTF("Unable to locate System partition.");
         nx_emmc_gpt_free(&gpt);
         return;
     }
@@ -449,20 +413,15 @@ static void _derive_emmc_keys(key_storage_t *keys, titlekey_buffer_t *titlekey_b
     nx_emmc_bis_init(system_part);
 
     if (f_mount(&emmc_fs, "bis:", 1)) {
-        EPRINTF("Unable to mount system partition.");
         nx_emmc_gpt_free(&gpt);
         return;
     }
 
-    if (!sd_mount()) {
-        EPRINTF("Unable to mount SD.");
-    } else if (!_derive_sd_seed(keys)) {
-        EPRINTF("Unable to get SD seed.");
+    if (sd_mount()) {
+        _derive_sd_seed(keys);
     }
 
-    if (!_derive_titlekeys(keys, titlekey_buffer, is_dev)) {
-        EPRINTF("Unable to derive titlekeys.");
-    }
+    _derive_titlekeys(keys, titlekey_buffer, is_dev);
 
     f_mount(NULL, "bis:", 1);
     nx_emmc_gpt_free(&gpt);
@@ -647,19 +606,12 @@ static void _save_keys_to_sd(key_storage_t *keys, titlekey_buffer_t *titlekey_bu
     s_printf(root_key_name + 14, "%02x", TSEC_ROOT_KEY_VERSION);
     _save_key(root_key_name, keys->tsec_root_key, SE_KEY_128_SIZE, text_buffer);
 
-    gfx_printf("\n%k  Found %d %s keys.\n\n", colors[(color_idx++) % 6], _key_count, is_dev ? "dev" : "prod");
-    gfx_printf("%kFound through master_key_%02x.\n\n", colors[(color_idx++) % 6], KB_FIRMWARE_VERSION_MAX);
-
     f_mkdir("sd:/switch");
 
     const char *keyfile_path = is_dev ? "sd:/switch/dev.keys" : "sd:/switch/prod.keys";
 
     FILINFO fno;
-    if (!sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
-        gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
-    } else {
-        EPRINTF("Unable to save keys to SD.");
-    }
+    sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path);
 
     if (_titlekey_count == 0 || !titlekey_buffer) {
         free(text_buffer);
@@ -679,11 +631,7 @@ static void _save_keys_to_sd(key_storage_t *keys, titlekey_buffer_t *titlekey_bu
     }
 
     keyfile_path = "sd:/switch/title.keys";
-    if (!sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
-        gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
-    } else {
-        EPRINTF("Unable to save titlekeys to SD.");
-    }
+    sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path);
 
     free(text_buffer);
 }
@@ -692,22 +640,16 @@ static void _derive_keys() {
     minerva_periodic_training();
 
     if (!check_keyslot_access()) {
-        EPRINTF("Unable to set crypto keyslots!\nTry launching payload differently\n or flash Spacecraft-NX if using a modchip.");
         return;
     }
 
     u32 start_whole_operation_time = get_tmr_us();
 
-    if (emummc_storage_init_mmc()) {
-        EPRINTF("Unable to init MMC.");
-    } else {
-        TPRINTFARGS("%kMMC init...     ", colors[(color_idx++) % 6]);
-    }
+    emummc_storage_init_mmc();
 
     minerva_periodic_training();
 
     if (emmc_storage.initialized && !emummc_storage_set_mmc_partition(EMMC_BOOT0)) {
-        EPRINTF("Unable to set partition.");
         emummc_storage_end();
     }
 
@@ -718,11 +660,7 @@ static void _derive_keys() {
 
     _derive_master_keys(&prod_keys, &dev_keys, is_dev);
 
-    TPRINTFARGS("%kMaster keys...  ", colors[(color_idx++) % 6]);
-
     _derive_bis_keys(keys);
-
-    TPRINTFARGS("%kBIS keys...     ", colors[(color_idx++) % 6]);
 
     _derive_misc_keys(keys);
     _derive_non_unique_keys(&prod_keys, is_dev);
@@ -731,16 +669,11 @@ static void _derive_keys() {
     titlekey_buffer_t *titlekey_buffer = (titlekey_buffer_t *)TITLEKEY_BUF_ADR;
 
     // Requires BIS key for SYSTEM partition
-    if (!emmc_storage.initialized) {
-        EPRINTF("eMMC not initialized.\nSkipping SD seed and titlekeys.");
-    } else if (key_exists(keys->bis_key[2])) {
+    if (emmc_storage.initialized && key_exists(keys->bis_key[2])) {
         _derive_emmc_keys(keys, titlekey_buffer, is_dev);
-    } else {
-        EPRINTF("Missing needed BIS keys.\nSkipping SD seed and titlekeys.");
     }
 
     end_time = get_tmr_us();
-    gfx_printf("%kLockpick totally done in %d us\n", colors[(color_idx++) % 6], end_time - start_whole_operation_time);
 
     if (h_cfg.t210b01) {
         // On Mariko, save only relevant key set
@@ -774,7 +707,6 @@ void derive_amiibo_keys() {
     minerva_periodic_training();
 
     if (!key_exists(keys->master_key[0])) {
-        EPRINTF("Unable to derive master keys for NFC.");
         minerva_change_freq(FREQ_800);
         btn_wait();
         return;
@@ -815,7 +747,7 @@ void dump_keys() {
     gfx_con_setpos(0, 0);
 
     gfx_printf("%k╔══════════════════════════════════════╗\n", COLOR_GREY_M);
-    gfx_printf("║  %kLockpick_RCM Pro%k v%d.%d.%d         ║\n", COLOR_CYAN_L, COLOR_GREY_M, LP_VER_MJ, LP_VER_MN, LP_VER_BF);
+    gfx_printf("║  %kDowngradeFixer%k v%d.%d.%d            ║\n", COLOR_CYAN_L, COLOR_GREY_M, LP_VER_MJ, LP_VER_MN, LP_VER_BF);
     gfx_printf("╚══════════════════════════════════════╝%k\n\n", COLOR_SOFT_WHITE);
 
     _key_count = 0;
@@ -844,7 +776,7 @@ void dump_keys() {
     if (btn == BTN_VOL_UP) {
         int res = save_fb_to_bmp();
         if (!res) {
-            gfx_printf("%kScreenshot sd:/switch/lockpick_rcm.bmp saved.", colors[(color_idx++) % 6]);
+            gfx_printf("%kScreenshot sd:/switch/downgradefixer.bmp saved.", colors[(color_idx++) % 6]);
         } else {
             EPRINTF("Screenshot failed.");
         }
@@ -852,6 +784,32 @@ void dump_keys() {
         btn_wait();
     }
     gfx_clear_grey(0x1B);
+}
+
+void dump_keys_silent() {
+    minerva_change_freq(FREQ_1600);
+
+    _key_count = 0;
+    _titlekey_count = 0;
+    color_idx = 0;
+
+    start_time = get_tmr_us();
+
+    _derive_keys();
+
+    emummc_load_cfg();
+    // Ignore whether emummc is enabled.
+    h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
+    emu_cfg.enabled = !h_cfg.emummc_force_disable;
+
+    // Skip PRODINFO dump for silent mode
+
+    if (emmc_storage.initialized) {
+        sdmmc_storage_end(&emmc_storage);
+    }
+
+    minerva_change_freq(FREQ_800);
+    // Completely silent - no output
 }
 
 bool derive_bis_keys_silently() {

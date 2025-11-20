@@ -89,7 +89,7 @@ int save_fb_to_bmp()
 	max77620_rtc_get_time(&time);
 
 	char path[0x80];
-	s_printf(path, "sd:/switch/screenshot/lockpick_rcm_%04d%02d%02d_%02d%02d%02d.bmp",
+	s_printf(path, "sd:/switch/screenshot/downgradefixer_%04d%02d%02d_%02d%02d%02d.bmp",
 		time.year, time.month, time.day, time.hour, time.min, time.sec);
 
 	// Save screenshot and log.
